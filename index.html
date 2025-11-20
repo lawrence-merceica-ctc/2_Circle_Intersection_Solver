@@ -242,7 +242,7 @@
                 ctx.moveTo(TX(x), TY(minY));
                 ctx.lineTo(TX(x), TY(maxY));
                 ctx.stroke();
-            }
+            } 
             for (let y = Math.ceil(minY / majorStep) * majorStep; y <= maxY; y += majorStep) {
                 ctx.beginPath();
                 ctx.moveTo(TX(minX), TY(y));
