@@ -1,0 +1,387 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Circle–Circle Intersection Visualiser</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: #ddd;
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+        }
+
+        .panel {
+            background: #111;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .controls {
+            width: 260px;
+        }
+
+        label {
+            display: block;
+            margin: 6px 0 2px;
+        }
+
+        input {
+            width: 100%;
+            padding: 6px;
+            background: #222;
+            border: 1px solid #444;
+            color: #eee;
+            border-radius: 4px;
+        }
+
+        #canvas {
+            width: 100%;
+            max-width: 1000px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+            display: block;
+            margin: auto;
+            cursor: crosshair;
+        }
+
+        .eq {
+            line-height: 1.4em;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Circle–Circle Intersection Visualiser</h1>
+
+<div class="panel">
+    <div class="row">
+
+        <div class="controls">
+            <h3>Circle 1</h3>
+            <label>X₁</label> <input id="x1" type="number" value="200">
+            <label>Y₁</label> <input id="y1" type="number" value="300">
+            <label>Radius r₁</label> <input id="r1" type="number" value="250">
+
+            <h3 style="margin-top:20px;">Circle 2</h3>
+            <label>X₂</label> <input id="x2" type="number" value="600">
+            <label>Y₂</label> <input id="y2" type="number" value="320">
+            <label>Radius r₂</label> <input id="r2" type="number" value="220">
+        </div>
+
+        <div style="flex:1; min-width:300px; display:flex; align-items:stretch;">
+            <canvas id="canvas"></canvas>
+        </div>
+
+    </div>
+</div>
+
+<div class="panel" id="results"></div>
+
+<script>
+    /* --------------------------------------------------------------
+       INPUT BINDING
+    -------------------------------------------------------------- */
+    const ids = ["x1", "y1", "r1", "x2", "y2", "r2"];
+    ids.forEach(id => document.getElementById(id).addEventListener("input", update));
+
+    /* --------------------------------------------------------------
+       GEOMETRY
+    -------------------------------------------------------------- */
+    function dist(x1, y1, x2, y2) {
+        return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    }
+
+    /* Core intersection solver:
+       Returns null, or {p1:{x,y}, p2:{x,y}, d, a, h}
+    */
+    function circleIntersect(x1, y1, r1, x2, y2, r2) {
+        const d = dist(x1, y1, x2, y2);
+
+        // No intersection cases
+        if (d > r1 + r2) return null;
+        if (d < Math.abs(r1 - r2)) return null;
+        if (d === 0 && r1 === r2) return null; // infinite solutions
+
+        // MathWorld formulas
+        const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+        const h = Math.sqrt(r1 * r1 - a * a);
+
+        const xm = x1 + a * (x2 - x1) / d;
+        const ym = y1 + a * (y2 - y1) / d;
+
+        const rx = -(y2 - y1) * (h / d);
+        const ry = (x2 - x1) * (h / d);
+
+        const p1 = {x: xm + rx, y: ym + ry};
+        const p2 = {x: xm - rx, y: ym - ry};
+
+        return {p1, p2, d, a, h, xm, ym};
+    }
+
+    /* --------------------------------------------------------------
+       DRAWING
+    -------------------------------------------------------------- */
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+        const parentW = Math.min(canvas.parentElement.offsetWidth || 600, 1000);
+        canvas.width = parentW;
+        canvas.height = parentW;
+    }
+
+    function draw() {
+        resizeCanvas();
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        let x1 = +x1El.value, y1 = +y1El.value, r1 = +r1El.value;
+        let x2 = +x2El.value, y2 = +y2El.value, r2 = +r2El.value;
+
+        const I = circleIntersect(x1, y1, r1, x2, y2, r2);
+
+        // Collect all key points
+        let pts = [
+            {x: x1, y: y1},
+            {x: x2, y: y2},
+            {x: x1 + r1, y: y1},
+            {x: x1 - r1, y: y1},
+            {x: x1, y: y1 + r1},
+            {x: x1, y: y1 - r1},
+            {x: x2 + r2, y: y2},
+            {x: x2 - r2, y: y2},
+            {x: x2, y: y2 + r2},
+            {x: x2, y: y2 - r2},
+        ];
+
+        if (I) {
+            pts.push(I.p1, I.p2);
+        }
+
+        // Compute bounding box
+        let minX = Math.min(...pts.map(p => p.x));
+        let maxX = Math.max(...pts.map(p => p.x));
+        let minY = Math.min(...pts.map(p => p.y));
+        let maxY = Math.max(...pts.map(p => p.y));
+
+        // Padding
+        const zoomPadding = 80;
+        minX -= zoomPadding;
+        minY -= zoomPadding;
+        maxX += zoomPadding;
+        maxY += zoomPadding;
+
+// Canvas width is fixed by CSS; height must be computed
+        const boxW = maxX - minX;
+        const boxH = maxY - minY;
+
+// Width determined by CSS-rendered size
+        const canvasW = canvas.clientWidth;
+
+// Scale so that width fits entirely
+        const scale = canvasW / boxW;
+
+// Compute required canvas height to match content
+        const canvasH = boxH * scale;
+
+// Set canvas resolution
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+
+        function TX(x) {
+            return (x - minX) * scale;
+        }
+
+        function TY(y) {
+            return (y - minY) * scale;
+        }
+
+        /* GRID (now valid because it sees minX, TX, TY, etc) */
+        function drawGrid() {
+            const majorStep = 100;
+            const minorStep = 20;
+
+            // minor
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "rgba(255,255,255,0.05)";
+            for (let x = Math.ceil(minX / minorStep) * minorStep; x <= maxX; x += minorStep) {
+                ctx.beginPath();
+                ctx.moveTo(TX(x), TY(minY));
+                ctx.lineTo(TX(x), TY(maxY));
+                ctx.stroke();
+            }
+            for (let y = Math.ceil(minY / minorStep) * minorStep; y <= maxY; y += minorStep) {
+                ctx.beginPath();
+                ctx.moveTo(TX(minX), TY(y));
+                ctx.lineTo(TX(maxX), TY(y));
+                ctx.stroke();
+            }
+
+            // major
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "rgba(255,255,255,0.12)";
+            for (let x = Math.ceil(minX / majorStep) * majorStep; x <= maxX; x += majorStep) {
+                ctx.beginPath();
+                ctx.moveTo(TX(x), TY(minY));
+                ctx.lineTo(TX(x), TY(maxY));
+                ctx.stroke();
+            }
+            for (let y = Math.ceil(minY / majorStep) * majorStep; y <= maxY; y += majorStep) {
+                ctx.beginPath();
+                ctx.moveTo(TX(minX), TY(y));
+                ctx.lineTo(TX(maxX), TY(y));
+                ctx.stroke();
+            }
+        }
+
+        // Draw grid BEFORE circles
+        drawGrid();
+
+        // Draw circles
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#0af";
+        ctx.beginPath();
+        ctx.arc(TX(x1), TY(y1), r1 * scale, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        ctx.strokeStyle = "#fa0";
+        ctx.beginPath();
+        ctx.arc(TX(x2), TY(y2), r2 * scale, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        // centers
+        ctx.fillStyle = "#0af";
+        ctx.beginPath();
+        ctx.arc(TX(x1), TY(y1), 6, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = "#fa0";
+        ctx.beginPath();
+        ctx.arc(TX(x2), TY(y2), 6, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // intersections
+        if (I) {
+            ctx.fillStyle = "#ff4444";
+            ctx.beginPath();
+            ctx.arc(TX(I.p1.x), TY(I.p1.y), 7, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(TX(I.p2.x), TY(I.p2.y), 7, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+    }
+
+
+    /* --------------------------------------------------------------
+       RESULTS PANEL
+    -------------------------------------------------------------- */
+    const x1El = document.getElementById("x1");
+    const y1El = document.getElementById("y1");
+    const r1El = document.getElementById("r1");
+
+    const x2El = document.getElementById("x2");
+    const y2El = document.getElementById("y2");
+    const r2El = document.getElementById("r2");
+
+    function update() {
+        const x1 = +x1El.value, y1 = +y1El.value, r1 = +r1El.value;
+        const x2 = +x2El.value, y2 = +y2El.value, r2 = +r2El.value;
+
+        const res = document.getElementById("results");
+
+        const I = circleIntersect(x1, y1, r1, x2, y2, r2);
+
+        if (!I) {
+            res.innerHTML = `<h2>Results</h2>No intersection or infinite intersections.`;
+            draw();
+            return;
+        }
+
+        const {p1, p2, d, a, h, xm, ym} = I;
+
+        res.innerHTML = `
+        <h2>Results</h2>
+        <p>Distance between centers: d = ${d.toFixed(3)}</p>
+
+        <h3>Math Breakdown</h3>
+        <div class="eq">
+        <p>a = (r₁² − r₂² + d²) / (2d)</p>
+        <p>a = (${r1}² − ${r2}² + ${d.toFixed(3)}²) / (2·${d.toFixed(3)}) = ${a.toFixed(3)}</p>
+
+        <p>h = √(r₁² − a²)</p>
+        <p>h = √(${r1}² − ${a.toFixed(3)}²) = ${h.toFixed(3)}</p>
+
+        <p>Intersection midpoint:</p>
+        <p>xₘ = x₁ + a(x₂ − x₁)/d = ${xm.toFixed(3)}</p>
+        <p>yₘ = y₁ + a(y₂ − y₁)/d = ${ym.toFixed(3)}</p>
+
+        <p>Intersection points:</p>
+        <p>P₁ = (${p1.x.toFixed(3)}, ${p1.y.toFixed(3)})</p>
+        <p>P₂ = (${p2.x.toFixed(3)}, ${p2.y.toFixed(3)})</p>
+        </div>
+    `;
+
+        draw();
+    }
+
+    /* --------------------------------------------------------------
+       DRAGGING OF CENTER POINTS
+    -------------------------------------------------------------- */
+    let dragTarget = null;
+
+    canvas.addEventListener("mousedown", e => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        const hit1 = dist(mx, my, +x1El.value, +y1El.value) < 15;
+        const hit2 = dist(mx, my, +x2El.value, +y2El.value) < 15;
+
+        if (hit1) dragTarget = "c1";
+        else if (hit2) dragTarget = "c2";
+    });
+
+    canvas.addEventListener("mousemove", e => {
+        if (!dragTarget) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        if (dragTarget === "c1") {
+            x1El.value = mx;
+            y1El.value = my;
+        } else if (dragTarget === "c2") {
+            x2El.value = mx;
+            y2El.value = my;
+        }
+        update();
+    });
+
+    canvas.addEventListener("mouseup", () => dragTarget = null);
+    canvas.addEventListener("mouseleave", () => dragTarget = null);
+
+    /* -------------------------------------------------------------- */
+
+    window.onload = update;
+
+</script>
+</body>
+</html>
